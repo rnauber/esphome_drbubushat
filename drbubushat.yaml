@@ -6,14 +6,13 @@ substitutions:
   hue_pos_tolerance: "6"
   
 packages:
-  base: !include common/m5_atom_echo.yaml
-#  wifi: !include common/wifi.yaml
+  base: !include m5_atom_echo.yaml
+
 
 wifi:
   ap:
     ssid: $friendly_name
 
-#captive_portal:
 
 api:
 
