@@ -1,0 +1,53 @@
+#based on https://github.com/esphome/media-players/blob/main/m5stack/m5stack-atom-echo.yaml
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: m5stack-atom
+  framework:
+    type: arduino
+    version: recommended
+       
+i2s_audio:
+  i2s_lrclk_pin: GPIO33
+  i2s_bclk_pin: GPIO19
+
+#microphone:
+#  - platform: i2s_audio
+#    id: echo_microphone
+#    i2s_din_pin: GPIO23
+#    adc_type: external
+#    pdm: true
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO39
+      inverted: true
+    name: Button
+    id: echo_button
+
+speaker:
+  - platform: i2s_audio
+    dac_type: external
+    i2s_dout_pin: GPIO22
+    id: my_speaker
+    #mode: mono
+
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: led
+    name: None
+    pin: GPIO27
+    default_transition_length: 0s
+    chipset: SK6812
+    num_leds: 1
+    rgb_order: grb
+    rmt_channel: 1
+    effects:
+      - pulse:
+          transition_length: 250ms
+          update_interval: 250ms

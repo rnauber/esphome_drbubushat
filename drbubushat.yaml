@@ -1,0 +1,266 @@
+substitutions:
+  device_name: drbubushat
+  friendly_name: "Dr. Bubu's Hat"
+  max_led_pos: "140" 
+  pos_to_hue_factor: "(220.0 / 140.0 )"
+  hue_pos_tolerance: "6"
+  
+packages:
+  base: !include common/m5_atom_echo.yaml
+#  wifi: !include common/wifi.yaml
+
+wifi:
+  ap:
+    ssid: $friendly_name
+
+#captive_portal:
+
+api:
+
+web_server:
+  port: 80
+  local: true
+  
+
+ota:  
+    platform: esphome
+
+logger:
+ level: debug
+
+globals:
+  - id: target_color_pos
+    type: uint8_t[8]
+    restore_value: no
+        
+  - id: active_colors
+    type: uint8_t
+    restore_value: no
+    initial_value: '1'   
+ 
+    
+esphome:
+  on_boot:
+    priority: -800
+    then:    
+      - script.execute: next_level
+                 
+
+
+deep_sleep:
+#  run_duration: 20s
+#  sleep_duration: 40s   
+  id: deep_sleep_1     
+#  wakeup_pin:    
+#      number: GPIO32
+#      mode: INPUT_PULLUP
+#      inverted: True 
+
+
+
+
+#https://docs.m5stack.com/en/unit/UNIT%208Angle
+
+i2c:
+  sda: 26
+  scl: 32
+  scan: false
+  id: bus_external
+  frequency: 400kHz
+  #timeout: 100us
+      
+m5stack_8angle:
+    i2c_id: bus_external
+    id: m5stack_8angle_base
+    
+    
+light:
+  - platform: m5stack_8angle
+    m5stack_8angle_id: m5stack_8angle_base
+    id: m8_angle_leds
+    name: "$device_name Knob Lights"
+    effects:
+        - addressable_scan:
+        - addressable_rainbow:
+            speed: 10
+            width: 8
+        - addressable_lambda:
+            name: "Game"
+            update_interval: 500ms
+            lambda: |-
+                    int i = 0;
+                    
+                    for (i=0; (i < id(active_colors)) && (i < 8); i++) 
+                          it[i] =  ESPHSVColor(id(target_color_pos)[i] * $pos_to_hue_factor, 255, 255).to_rgb();
+                    for (;i < 9;i++)
+                        it[i] = Color::BLACK;
+                    
+
+#seeed Grove - WS2813 RGB LED Stripe, wasserdicht - 30 LED/m - 1m
+#http://www.normandled.com/upload/201605/WS2813%20LED%20Datasheet.pdf
+  - platform: esp32_rmt_led_strip
+    rmt_channel: 0
+    chipset: WS2812
+    pin: GPIO25
+    num_leds: 144
+    rgb_order: GRB
+    id: ledstrip
+    name: "$device_name Strip"
+    color_correct: [60%, 60%, 60%]
+    effects:
+      - addressable_color_wipe:
+         name: "Color Wipe"
+      - addressable_rainbow:
+         name: Rainbow
+         speed: 10
+         width: 50
+      - addressable_lambda:
+          name: "Game"
+          update_interval: 50ms
+          lambda: |-
+              static uint8_t time_idx=0;
+              time_idx++;
+              
+              // the rainbow
+              for (uint8_t i=0; i < it.size(); i++) {
+                       
+                        ESPHSVColor hsv;
+                        hsv.value = 200;
+                        hsv.saturation = 255;
+                        hsv.hue =  (uint8_t)(i * $pos_to_hue_factor ) ;
+                        it[i] = hsv;
+                     };
+              
+              bool all_right_placed = true;
+              
+              // the movable color patches
+              for (uint8_t i=0; i < id(active_colors) && i < 8; i++) {
+                  uint8_t pos = int(id(m5stack_8angle_base)->read_knob_pos(i) * $max_led_pos);
+                  uint8_t targ = id(target_color_pos)[i]; 
+               
+                  bool right_placement = abs(pos - targ ) <= $hue_pos_tolerance;
+                  
+                  all_right_placed &= right_placement;
+                                
+                  ESPHSVColor hsv;
+                  hsv.value = right_placement ? 128: (time_idx & 0x07) << 5  ;
+                  hsv.saturation = 255;
+                  hsv.hue = (uint8_t)(targ * $pos_to_hue_factor) ;
+                                    
+                  for (uint8_t newpos=pos; (newpos < it.size()) && (newpos < pos + 4); newpos++) {
+                       it[newpos] = hsv;                     
+                  }       
+              };
+              
+              if (all_right_placed) 
+              {
+                id(next_level).execute();
+              }
+              
+              
+
+        
+binary_sensor:
+#  - platform: m5stack_8angle
+#    m5stack_8angle_id: m5stack_8angle_base
+#    name: "$device_name Switch"
+#    on_state:    
+#      - globals.set:
+#            id: active_colors
+#            value: "1"
+#      - script.execute: next_level
+#    
+#    
+   - id: !extend echo_button
+     on_press:    
+          - globals.set:
+                id: active_colors
+                value: "1"
+          - script.execute: next_level
+
+        
+rtttl:
+  speaker: my_speaker
+  id: my_rtttl
+  gain: 1.0
+      
+script:
+  - id: play_win_song
+    then:
+      - rtttl.play:
+                rtttl: "Beyonce:d=32,o=5,b=70:?p,32d,16p,16a4,32p,16d,32p,16a4,32p,32d,32p,32a4,16p,a4,32p,32a4,32p,32a4,16p,32d,16p,16a4,32p,32d,16p,16a4,32p,32d,32p,32a4,16p,32a4,32p,16a#4,32p,32a4,16p,32d,16p,16a4,32p,16d,32p,16a4,32p,32d,32p,32a4,16p,a4,32p,32a4,32p,32a4,16p,32d,16p,16a4,32p,32d,16p,16a4,32p,32d,32p,32a4,16p,32a4,32p,16a#4,32p,32a4,?p,16d,32p,32c,32p,32c,32p,16c,32p,16d,32p,16e,32p,32c,32p,32c,32p,16c,8p,16d,32p,32c,32p,16c,32p,16d,32p,16e,32p,32c,32p,32c,32p,16d,8p,16c,32p,32d,32p,32d,32p,16c,32p,16d,32p,16e,32p,32c,32p,32c,32p,16d,8p,32d,32p,32d,32p,16d,32p,16c,32p,16d,32p,16e,32p,32c,32p,32c,32p,16d,8p,32g,32p,32g,32p,32f,32p,32f,32p,32e,32p,32e,32p,32d,32p,32d,32p,32d,32p,32d,32p,16d,16p,16c.,8p,16g.,32p,32f,32p,32f,16e,32p,32d,32p,16e.,32p,32d,16p,16d.,32p,16c,4p,32c,32p,32c,32p,32d,32p,32d,32p,16e,32p,32c,32p,32c,32p,16d,8p,32c,32p,32d,32p,32d,32p,16c,32p,32d,32p,32d,32p,32e,32p,32e,32p,16c,32p,16d,8p,32f,p,32f,32p,32f,32p,32f,16p,32f,32p,32f,32p,16g,32p,16d,32p,32d,32p,32f,8p,32f,32p,32d,32p,32f,p,32f,16p,16f,32p,32f,32p,16g,32p,16d.,4p,32f,p,32f,32p,32f,32p,32f,16p,32f,32p,32f,32p,16g,32p,16d,32p,32d,32p,32f,8p,32f,32p,32d,32p,32f,p,32f,16p,16f,32p,32f,32p,16g,32p,16d.,4p,32f,p,32f,32p,32f,32p,32f,16p,32f,32p,32f,32p,16g,32p,16d,32p,32d,32p,32f,8p,32f,32p,32d,32p,32f,p,32f,16p,16f,32p,32f,32p,16g,32p,16d.,8p,32g,32p,32g,32p,32g,16p,32f,32p,32g,16p,32g,16p,g,32p,16g,32p,32f,32p,g,32p,32g,32p,32g,32p,32f,32p,32g,32p,32g,16p,32g,32p,32g,32p,32g,p,4f,4p,32d,16p,16a4,32p,16d,32p,16a4,32p,32d,32p,32a4,16p,a4,32p,32a4,32p,32a4,16p,32d,16p,16a4,32p,32d,16p,16a4,32p,32d,32p,32a4,16p,32a4,32p,16a#4,32p,32a4,16p,32d,16p,16a4,32p,16d,32p,16a4,32p,32d,32p,32a4,16p,a4,32p,32a4,32p,32a4,16p,32d,16p,16a4,32p,32d,16p,16a4,32p,32d,32p,32a4,16p,32a4,32p,16a#4,32p,32a4,8p,16d,32p,32c,32p,32c,32p,16c,32p,16d,32p,16e,32p,32c,32p,32c,32p,16c,8p,16d,32p,32c,32p,16c,32p,16d,32p,16e,32p,32c,32p,32c,32p,16d,8p,32g,32p,32g,32p,32f,32p,32f,32p,32e,32p,32e,32p,32d,32p,32d,32p,32d,32p,32d,32p,16d,16p,16c.,8p,16g.,32p,32f,32p,32f,16e,32p,32d,32p,16e.,32p,32d,16p,16d.,32p,16c,4p,32c,4p,16g,32p,32f,32p,32g,32p,32f,32p,16f.,8p,32c,32p,8g,32p,16f,32p,32e,32p,16f.,32p,16e,32p,32d,32p,16d,32p,32c,32p,16c.,4p,32c,p,16d,32p,32c,p,16d,32p,32d,32p,32e,32p,32c,32p,32c,32p,16d.,8p,32c,32p,16d,32p,32d,32p,16c.,32p,16d,32p,16e,32p,32c,32p,32c,32p,16d,8p,32f,p,32f,32p,32f,32p,32f,16p,32f,32p,32f,32p,16g,32p,16d,32p,32d,32p,32f,8p,32f,32p,32d,32p,32f,p,32f,16p,16f,32p,32f,32p,16g,32p,16d.,4p,32f,p,32f,32p,32f,32p,32f,16p,32f,32p,32f,32p,16g,32p,16d,32p,32d,32p,32f,8p,32f,32p,32d,32p,32f,p,32f,16p,16f,32p,32f,32p,16g,32p,16d.,4p,32f,p,32f,32p,32f,32p,32f,16p,32f,32p,32f,32p,16g,32p,16d,32p,32d,32p,32f,8p,32f,32p,32d,32p,32f,p,32f,16p,16f,32p,32f,32p,16g,32p,16d.,8p,32g,32p,32g,32p,32g,16p,32f,32p,32g,16p,32g,16p,g,32p,16g,32p,32f,32p,g,32p,32g,32p,32g,32p,32f,32p,32g,32p,32g,16p,32g,32p,32g,32p,32g,p,4f,4p,32g,32p,32g,32p,32g,16p,32f,32p,32g,16p,32g,16p,g,32p,16g,32p,32f,32p,g,32p,32g,32p,32g,32p,32f,32p,32g,32p,32g,16p,32g,32p,32g,32p,32g,p,4f
+
+"  
+    
+  - id: play_nextlevel_song
+    then:                
+      - rtttl.play:
+                rtttl: "1up:d=16,o=6,b=200:c,e,g,e,c,g,e"      
+                                
+                
+  - id: start_rainbow_animation
+    then:
+      - light.turn_on:
+            id: m8_angle_leds
+            brightness: 100%
+            effect: "Rainbow"
+      - light.turn_on:
+            id: ledstrip
+            brightness: 100%
+            effect: "Rainbow"
+        
+  - id: start_game_display
+    then:
+      - light.turn_on:
+            id: m8_angle_leds
+            brightness: 100%
+            effect: "Game"
+      - light.turn_on:
+            id: ledstrip
+            brightness: 100%
+            effect: "Game"
+               
+    
+  - id: next_level
+    then:  
+      - script.execute: start_rainbow_animation
+      - if:
+            condition:
+                lambda: |-
+                    return (id(active_colors) < 7);
+
+            then: 
+              - logger.log: "Increase Level"
+              - lambda: |- 
+                      id(play_nextlevel_song).execute();
+                      //id(play_win_song).execute();
+
+                      id(active_colors) = id(active_colors) + 1;
+                      
+                      //find new, random target colors
+                      uint8_t i = 0;
+                      while (i < id(active_colors) && i < 8){
+                         id(target_color_pos)[i] = (uint8_t)(random_float() * ($max_led_pos-1));
+                         for (uint8_t ii=0; ii< i; ii++)
+                            if (abs(id(target_color_pos)[i] - id(target_color_pos)[ii]) < $hue_pos_tolerance * 2 ){
+                              i--;
+                              break;
+                            };
+                         i++;
+                      }
+                      
+              - logger.log: "Waiting for next level song done"   
+              - delay: 2s
+              #- wait_until:
+              #      condition:
+              #          speaker.is_stopped:
+              - logger.log: "Done playing the next level song"   
+              - script.execute: start_game_display    
+            else:
+                - logger.log: "You won"
+                - script.execute: play_win_song
+
+                        
+                
+                
+
